@@ -136,7 +136,7 @@ def train():
             iters += 1
 
         # epoch stats
-        tqdm.write(f'Epoch {epoch}/{EPOCHS}: Loss_D: {np.mean(D_losses[:len(dataloader)]):.4f}\tLoss_G: {np.mean(G_losses[:len(dataloader)]):.4f}')
+        tqdm.write(f'Epoch {epoch}/{EPOCHS}: Loss_D: {np.mean(D_losses[-len(dataloader):]):.4f}\tLoss_G: {np.mean(G_losses[-len(dataloader):]):.4f}')
 
         # save checkpoints
         if epoch % 10 == 0:
