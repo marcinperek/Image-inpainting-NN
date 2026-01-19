@@ -14,3 +14,12 @@ uv sync --extra [torch-version]
 where `[torch-version]` can be set to:
 - `cpu` for CPU-only version
 - `cu126` for CUDA 12.6 support
+
+
+# Train
+Train UNet with discriminator loss:
+```bash
+uv run train
+```
+
+Set configuration in `config.toml`.
