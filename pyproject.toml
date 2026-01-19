@@ -9,13 +9,16 @@ dependencies = [
     "pandas>=2.3.3",
 ]
 
+[project.scripts]
+train = "scripts.train:train"
+
 # Package build system and location
 [build-system]
 requires = ["uv_build>=0.9.26,<0.10.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-module-name = "utils"
+module-name = ["utils", "data", "ml", "scripts"]
 
 
 # Torch CUDA/CPU option
