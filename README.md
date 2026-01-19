@@ -16,10 +16,14 @@ where `[torch-version]` can be set to:
 - `cu126` for CUDA 12.6 support
 
 
-# Train
+## Train
 Train UNet with discriminator loss:
 ```bash
 uv run train
 ```
 
 Set configuration in `config.toml`.
+
+
+## Weights
+Weights can be downloaded here: https://drive.google.com/drive/folders/1HfID7NYkO2YLtg5oFcNX8ENMkjZmfXQG?usp=sharing
