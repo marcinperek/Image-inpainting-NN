@@ -18,7 +18,7 @@ def mask_image(img: np.ndarray) -> np.ndarray:
 
     return img
 
-def mask_batch(batch: Tensor) -> Tensor:
+def mask_batch(batch: Tensor, value=1) -> Tensor:
     masked_batch = batch.clone()
     batch_size, channels, height, width = batch.shape
     padding = 30
@@ -31,7 +31,7 @@ def mask_batch(batch: Tensor) -> Tensor:
 
         anchor = np.random.randint(0+padding, width - padding - box_width), np.random.randint(0+padding, height - padding - box_height)
 
-        masked_batch[i, :, anchor[1]:anchor[1]+box_height, anchor[0]:anchor[0]+box_width] = 0
+        masked_batch[i, :, anchor[1]:anchor[1]+box_height, anchor[0]:anchor[0]+box_width] = value
 
     return masked_batch
 
