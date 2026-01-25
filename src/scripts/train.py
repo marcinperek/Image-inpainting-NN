@@ -128,6 +128,7 @@ def train():
     G_losses = []
     D_losses = []
     iters = 0
+    best_val_loss = float('inf')
 
     print("\n\nStarting training")
 
@@ -222,16 +223,21 @@ def train():
 
         avg_val_loss = val_loss / len(val_loader)
 
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            torch.save(netG.state_dict(), f'{MODEL_DIR}/checkpoints/best_generator_{run}.pth')
+            torch.save(netD.state_dict(), f'{MODEL_DIR}/checkpoints/best_discriminator_{run}.pth')
+
         # log to wandb
         log_dict = {"val/l1_loss": avg_val_loss, "epoch": epoch}
         # epoch stats
         tqdm.write(f'Epoch {epoch}/{EPOCHS}: Loss_D: {np.mean(D_losses[-len(train_loader):]):.4f}\tLoss_G: {np.mean(G_losses[-len(train_loader):]):.4f}| Val L1 Loss: {avg_val_loss:.4f}')
 
-        # save checkpoints and logging images every 5 epochs
-        if epoch % 5 == 0:
+        # save checkpoints and logging images
+        if epoch % 4 == 0:
             logging_images = torch.cat((logging_real, logging_masked, logging_fake), dim=2)
             logging_images = (logging_images + 1) / 2.0  # denormalization
-            grid = make_grid(logging_images, nrow=1)
+            grid = make_grid(logging_images, nrow=4)
 
             log_dict["val/log_images"] = wandb.Image(grid, caption=f"Epoch {epoch} Results")
 
