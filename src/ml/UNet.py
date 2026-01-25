@@ -1,4 +1,4 @@
-from torch.nn import Module, Conv2d, ConvTranspose2d, BatchNorm2d, ReLU, Sigmoid, MaxPool2d, Sequential
+from torch.nn import Module, Conv2d, ConvTranspose2d, BatchNorm2d, ReLU, Sigmoid, MaxPool2d, Sequential, Tanh
 from torch import cat
 from torchsummary import summary
 
@@ -11,26 +11,27 @@ class UNet(Module):
         self.down1 = DownBlock(64, 128)
         self.down2 = DownBlock(128, 256)
         self.down3 = DownBlock(256, 512)
-        self.down4 = DownBlock(512, 1024)
-        self.up1 = UpBlock(1024, 512)
+        # self.down4 = DownBlock(512, 1024)
+        # self.up1 = UpBlock(1024, 512)
         self.up2 = UpBlock(512, 256)
         self.up3 = UpBlock(256, 128)
         self.up4 = UpBlock(128, 64)
         self.outconv = Conv2d(64, 3, kernel_size=1)
-        self.sigmoid = Sigmoid()
-
+        self.tanh = Tanh()
+        
     def forward(self, x):
         x1 = self.inconv(x)
         x2 = self.down1(x1)
         x3 = self.down2(x2)
         x4 = self.down3(x3)
-        x5 = self.down4(x4)
-        x = self.up1(x5, x4)
-        x = self.up2(x, x3)
+        # x5 = self.down4(x4)
+        # x = self.up1(x5, x4)
+        x = self.up2(x4, x3)
+        # x = self.up2(x, x3)
         x = self.up3(x, x2)
         x = self.up4(x, x1)
         x = self.outconv(x)
-        x = self.sigmoid(x)
+        x = self.tanh(x)
         return x
     
     def summary(self):
