@@ -1,6 +1,6 @@
 [train]
 batch_size = 4
-epochs = 100
+epochs = 1
 learning_rate = 0.0002
 beta1 = 0.5
 beta2 = 0.999
@@ -13,5 +13,5 @@ hidden_channels = 64
 
 [files]
 image_size = 256
-data_root = ".images/"
+data_root = "images/"
 output_dir = "models/"
