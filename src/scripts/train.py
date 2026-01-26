@@ -120,8 +120,8 @@ def train():
         criterion_GAN = BCEWithLogitsLoss()
         criterion_pixel = L1Loss()
         criterion_vgg = VGGLoss(device)
-        lambda_pixel = 10.0
-        lambda_vgg = 10.0
+        lambda_pixel = 30.0
+        lambda_vgg = 15.0
         
         real_label = 0.9 
         fake_label = 0.0
