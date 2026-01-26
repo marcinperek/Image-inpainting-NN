@@ -35,14 +35,15 @@ def mask_batch(batch: Tensor, value=1) -> Tensor:
 
     return masked_batch
 
-def mask_batch_torch(batch: Tensor, device, seed: int = None) -> Tensor:
-    masked_batch = batch.clone()
+def generate_batch_masks(batch: Tensor ,device, seed: int | None = None) -> Tensor:
+    """
+    Generates random rectangular masks for each image in the batch.
+    """
     batch_size, channels, height, width = batch.shape
     padding = 30
     min_size = 30
     max_size = 80
 
-    # this ensures same masks for each validation
     gen = None
     if seed is not None:
         gen = torch.Generator(device=device)
@@ -56,6 +57,40 @@ def mask_batch_torch(batch: Tensor, device, seed: int = None) -> Tensor:
 
     anchor_x = (torch.rand(batch_size, device=device, generator=gen) * range_x).long() + padding
     anchor_y = (torch.rand(batch_size, device=device, generator=gen) * range_y).long() + padding
+
+    return torch.stack([anchor_x, anchor_y, box_widths, box_heights], dim=1)
+
+def get_mask_channel(batch: Tensor, masks: Tensor, device):
+    """
+    Generates a binary mask channel for the batch based on the provided masks.
+    """
+    mask_batch = torch.zeros_like(batch).to(device)
+    batch_size, channels, height, width = batch.shape
+    anchor_x = masks[:, 0]
+    anchor_y = masks[:, 1]
+    box_widths = masks[:, 2]
+    box_heights = masks[:, 3]
+
+
+    for i in range(batch_size):
+        y1, x1 = anchor_y[i].item(), anchor_x[i].item()
+        h, w = box_heights[i].item(), box_widths[i].item()
+        
+        mask_batch[i, :, y1:y1+h, x1:x1+w] = 1.0
+
+    return mask_batch
+
+def overlay_masks(batch: Tensor, masks: Tensor, device) -> Tensor:
+    """
+    Overlays masks on the batch by setting the masked regions to -1.0.
+    """
+    masked_batch = batch.clone()
+    batch_size, channels, height, width = batch.shape
+    anchor_x = masks[:, 0]
+    anchor_y = masks[:, 1]
+    box_widths = masks[:, 2]
+    box_heights = masks[:, 3]
+
 
     for i in range(batch_size):
         y1, x1 = anchor_y[i].item(), anchor_x[i].item()
