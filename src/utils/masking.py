@@ -18,23 +18,6 @@ def mask_image(img: np.ndarray) -> np.ndarray:
 
     return img
 
-def mask_batch(batch: Tensor, value=1) -> Tensor:
-    masked_batch = batch.clone()
-    batch_size, channels, height, width = batch.shape
-    padding = 30
-    min_size = 30
-    max_size = 80
-
-    for i in range(batch_size):
-        box_width = np.random.randint(min_size, max_size)
-        box_height = np.random.randint(min_size, max_size)
-
-        anchor = np.random.randint(0+padding, width - padding - box_width), np.random.randint(0+padding, height - padding - box_height)
-
-        masked_batch[i, :, anchor[1]:anchor[1]+box_height, anchor[0]:anchor[0]+box_width] = value
-
-    return masked_batch
-
 def generate_batch_masks(batch: Tensor ,device, seed: int | None = None) -> Tensor:
     """
     Generates random rectangular masks for each image in the batch.
@@ -64,8 +47,8 @@ def get_mask_channel(batch: Tensor, masks: Tensor, device):
     """
     Generates a binary mask channel for the batch based on the provided masks.
     """
-    mask_batch = torch.zeros_like(batch).to(device)
     batch_size, channels, height, width = batch.shape
+    mask_batch = torch.zeros((batch_size, 1, height, width), device=device)
     anchor_x = masks[:, 0]
     anchor_y = masks[:, 1]
     box_widths = masks[:, 2]
@@ -99,3 +82,11 @@ def overlay_masks(batch: Tensor, masks: Tensor, device) -> Tensor:
         masked_batch[i, :, y1:y1+h, x1:x1+w] = -1.0
 
     return masked_batch
+
+
+def mask_batch(batch: Tensor, device, seed: int | None = None) -> Tensor:
+    masks = generate_batch_masks(batch, device, seed)
+    mask_channel = get_mask_channel(batch, masks, device)
+    masked_real = overlay_masks(batch, masks, device)
+    masked = torch.cat((masked_real, mask_channel), dim=1)
+    return masked
