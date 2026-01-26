@@ -12,6 +12,7 @@ def rescale_tensor(img:Tensor) -> Tensor:
     img = clip(img, 0, 1)
     return img * 255
 
-def image_from_tensor(img: Tensor) -> np.ndarray:
-    img = rescale_tensor(img)
+def image_from_tensor(img: Tensor, rescale=True) -> np.ndarray:
+    if rescale:
+        img = rescale_tensor(img)
     return tensor_to_numpy(img, bgr=True)
