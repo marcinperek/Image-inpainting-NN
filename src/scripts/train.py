@@ -16,7 +16,6 @@ from torch.amp import GradScaler, autocast
 
 from ml.UNet import UNet
 from ml.Discriminator import Discriminator
-from utils import config
 from utils.config import load_config
 from utils.weights import weights_init_normal
 from utils.masking import mask_batch, mask_batch_torch
@@ -297,3 +296,6 @@ def train():
     torch.save(D_losses, f'{MODEL_DIR}D_losses_{run}.pt')
     
     wandb.finish()
+
+if __name__ == "__main__":
+    train()
