@@ -210,26 +210,26 @@ def train():
 
                 D_G_z2 = output.sigmoid().mean().item()
 
-            # Stats
-            if i % 50 == 0:
-                tqdm.write('[%d/%d][%d/%d]  Loss_D: %.4f\tLoss_G: %.4f\tLoss_adv: %.4f\tLoss_pixel: %.4f\tLoss_vgg: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f'
-                    % (epoch, EPOCHS, i, len(train_loader),
-                        lossD.item(), lossG.item(), loss_adv.item(), loss_pixel.item(), loss_vgg.item(), D_x, D_G_z1, D_G_z2))
-                
-                # log to wandb
-                wandb.log({
-                    "train/loss_D": lossD.item(),
-                    "train/loss_G": lossG.item(),
-                    "train/loss_adv": loss_adv.item(),
-                    "train/loss_pixel": loss_pixel.item(),
-                    "train/loss_vgg": loss_vgg.item(),
-                    "train/D_x": D_x,
-                    "train/D_G_z": D_G_z1,
-                    "train/grad_norm_G": grad_norm_G,
-                    "train/lr_G": optimizerG.param_groups[0]['lr']
-                })
+                # Stats
+                if i % 50 == 0:
+                    tqdm.write('[%d/%d][%d/%d]  Loss_D: %.4f\tLoss_G: %.4f\tLoss_adv: %.4f\tLoss_pixel: %.4f\tLoss_vgg: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f'
+                        % (epoch, EPOCHS, i, len(train_loader),
+                            lossD.item(), lossG.item(), loss_adv.item(), loss_pixel.item(), loss_vgg.item(), D_x, D_G_z1, D_G_z2))
+                    
+                    # log to wandb
+                    wandb.log({
+                        "train/loss_D": lossD.item(),
+                        "train/loss_G": lossG.item(),
+                        "train/loss_adv": loss_adv.item(),
+                        "train/loss_pixel": loss_pixel.item(),
+                        "train/loss_vgg": loss_vgg.item(),
+                        "train/D_x": D_x,
+                        "train/D_G_z": D_G_z1,
+                        "train/grad_norm_G": grad_norm_G,
+                        "train/lr_G": optimizerG.param_groups[0]['lr']
+                    })
 
-                
+                    
                 G_losses.append(lossG.item())
                 D_losses.append(lossD.item())
                 iters += 1
