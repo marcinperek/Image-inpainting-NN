@@ -6,7 +6,7 @@ import wandb
 
 import torch
 from torch.utils.data import DataLoader, Subset, random_split
-from torch.nn import BCELoss, L1Loss, BCEWithLogitsLoss
+from torch.nn import BCELoss, L1Loss, BCEWithLogitsLoss, MSELoss
 from torch.optim import Adam
 from torchvision.datasets import ImageFolder
 from torchvision.transforms import Compose, Resize, ToTensor, Normalize, RandomHorizontalFlip, RandomRotation, RandomResizedCrop
@@ -20,6 +20,7 @@ from utils import config
 from utils.config import load_config
 from utils.weights import weights_init_normal
 from utils.masking import mask_batch, mask_batch_torch
+from utils.losses import VGGLoss
 
 def train():
     run = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -118,11 +119,13 @@ def train():
     # fake_label = 0.
     criterion_GAN = BCEWithLogitsLoss()
     criterion_pixel = L1Loss()
+    criterion_vgg = VGGLoss(device)
+    lambda_pixel = 10.0
+    lambda_vgg = 10.0
     
     real_label = 0.9 
     fake_label = 0.0
     
-    lambda_pixel = 100.0
 
     optimizerD = Adam(netD.parameters(), lr=LR, betas=(BETA1, BETA2))
     optimizerG = Adam(netG.parameters(), lr=LR, betas=(BETA1, BETA2))
@@ -190,8 +193,9 @@ def train():
                 output = netD(fake).view(-1)
                 loss_adv = criterion_GAN(output, label)
                 loss_pixel = criterion_pixel(fake, real)
+                loss_vgg = criterion_vgg(fake, real)
                 # lossG = criterion(output, label)
-                lossG = loss_adv + lambda_pixel * loss_pixel
+                lossG = loss_adv + lambda_pixel * loss_pixel + lambda_vgg * loss_vgg
             
             scaler.scale(lossG).backward()
 
@@ -208,9 +212,9 @@ def train():
 
             # Stats
             if i % 50 == 0:
-                tqdm.write('[%d/%d][%d/%d]  Loss_D: %.4f\tLoss_G: %.4f\tLoss_adv: %.4f\tLoss_pixel: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f'
+                tqdm.write('[%d/%d][%d/%d]  Loss_D: %.4f\tLoss_G: %.4f\tLoss_adv: %.4f\tLoss_pixel: %.4f\tLoss_vgg: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f'
                     % (epoch, EPOCHS, i, len(train_loader),
-                        lossD.item(), lossG.item(), loss_adv.item(), loss_pixel.item(), D_x, D_G_z1, D_G_z2))
+                        lossD.item(), lossG.item(), loss_adv.item(), loss_pixel.item(), loss_vgg.item(), D_x, D_G_z1, D_G_z2))
                 
                 # log to wandb
                 wandb.log({
@@ -218,6 +222,7 @@ def train():
                     "train/loss_G": lossG.item(),
                     "train/loss_adv": loss_adv.item(),
                     "train/loss_pixel": loss_pixel.item(),
+                    "train/loss_vgg": loss_vgg.item(),
                     "train/D_x": D_x,
                     "train/D_G_z": D_G_z1,
                     "train/grad_norm_G": grad_norm_G,
@@ -232,7 +237,8 @@ def train():
 
         # validation
         netG.eval() 
-        val_loss = 0.0
+        val_pixel_loss = 0.0
+        val_vgg_loss = 0.0
         VAL_SEED = 555
 
         avg_psnr = 0.0
@@ -246,7 +252,8 @@ def train():
 
                 with autocast('cuda'):
                     fake_val = netG(masked_val)
-                    val_loss += criterion_pixel(fake_val, real_val).item()
+                    val_pixel_loss += criterion_pixel(fake_val, real_val).item()
+                    val_vgg_loss += criterion_vgg(fake_val, real_val).item()
 
                 real_val_denorm = (real_val + 1) / 2.0
                 fake_val_denorm = (fake_val + 1) / 2.0
@@ -259,7 +266,10 @@ def train():
                     logging_masked = masked_val[:4]
                     logging_fake = fake_val[:4]
 
-        avg_val_loss = val_loss / len(val_loader)
+        avg_val_pixel_loss = val_pixel_loss / len(val_loader)
+        avg_val_vgg_loss = val_vgg_loss / len(val_loader)
+        avg_val_loss = avg_val_pixel_loss * lambda_pixel + avg_val_vgg_loss * lambda_vgg
+
         final_psnr = avg_psnr / len(val_loader)
         final_ssim = avg_ssim / len(val_loader)
 
@@ -271,12 +281,12 @@ def train():
             torch.save(netD.state_dict(), f'{MODEL_DIR}/checkpoints/best_discriminator_{run}.pth')
 
         # log to wandb
-        log_dict = {"val/l1_loss": avg_val_loss, "val/psnr": final_psnr, "val/ssim": final_ssim, "epoch": epoch}
+        log_dict = {"val/loss": avg_val_loss,"val/pixel_loss": avg_val_pixel_loss, "val/vgg_loss": avg_val_vgg_loss, "val/psnr": final_psnr, "val/ssim": final_ssim, "epoch": epoch}
         # epoch stats
-        tqdm.write(f'Epoch {epoch}/{EPOCHS}: Loss_D: {np.mean(D_losses[-len(train_loader):]):.4f}\tLoss_G: {np.mean(G_losses[-len(train_loader):]):.4f}| Val L1 Loss: {avg_val_loss:.4f}')
+        tqdm.write(f'Epoch {epoch}/{EPOCHS}: Loss_D: {np.mean(D_losses[-len(train_loader):]):.4f}\tLoss_G: {np.mean(G_losses[-len(train_loader):]):.4f}| Val Total Loss: {avg_val_loss:.4f}\tVal Pixel Loss: {avg_val_pixel_loss:.4f}\tVal VGG Loss: {avg_val_vgg_loss:.4f} ')
 
         # save checkpoints and logging images
-        if epoch % 4 == 0:
+        if epoch % 5 == 0:
             logging_images = torch.cat((logging_real, logging_masked, logging_fake), dim=2)
             logging_images = (logging_images + 1) / 2.0  # denormalization
             grid = make_grid(logging_images, nrow=4)
