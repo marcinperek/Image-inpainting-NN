@@ -120,12 +120,12 @@ def train():
         criterion_GAN = BCEWithLogitsLoss()
         criterion_pixel = L1Loss()
         criterion_vgg = VGGLoss(device)
-        lambda_pixel = 30.0
-        lambda_vgg = 15.0
+        lambda_pixel = config["train"]["lambda_pixel"]
+        lambda_vgg = config["train"]["lambda_vgg"]
         
-        real_label = 0.9 
+        real_label = 0.9
         fake_label = 0.0
-        
+
 
         optimizerD = Adam(netD.parameters(), lr=LR, betas=(BETA1, BETA2))
         optimizerG = Adam(netG.parameters(), lr=LR, betas=(BETA1, BETA2))
@@ -280,7 +280,7 @@ def train():
                 torch.save(netG.state_dict(), f'{MODEL_DIR}/checkpoints/best_generator_{run}.pth')
                 torch.save(netD.state_dict(), f'{MODEL_DIR}/checkpoints/best_discriminator_{run}.pth')
 
-        # log to wandb
+            # log to wandb
             log_dict = {"val/loss": avg_val_loss,"val/pixel_loss": avg_val_pixel_loss, "val/vgg_loss": avg_val_vgg_loss, "val/psnr": final_psnr, "val/ssim": final_ssim, "epoch": epoch}
             # epoch stats
             tqdm.write(f'Epoch {epoch}/{EPOCHS}: Loss_D: {np.mean(D_losses[-len(train_loader):]):.4f}\tLoss_G: {np.mean(G_losses[-len(train_loader):]):.4f}| Val Total Loss: {avg_val_loss:.4f}\tVal Pixel Loss: {avg_val_pixel_loss:.4f}\tVal VGG Loss: {avg_val_vgg_loss:.4f} ')
