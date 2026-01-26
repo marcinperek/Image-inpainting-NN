@@ -37,8 +37,7 @@ class Discriminator(Module):
             LeakyReLU(0.2, inplace=True),
 
             # (hidden_dim*8) x 4 x 4
-            Conv2d(hidden_dim * 8, 1, kernel_size=4, stride=1, padding=0, bias=False),
-            Sigmoid()
+            Conv2d(hidden_dim * 8, 1, kernel_size=4, stride=1, padding=0, bias=False)
             # 1 x 1 x 1
         )
     

@@ -6,11 +6,13 @@ import wandb
 
 import torch
 from torch.utils.data import DataLoader, Subset, random_split
-from torch.nn import BCELoss, L1Loss
+from torch.nn import BCELoss, L1Loss, BCEWithLogitsLoss
 from torch.optim import Adam
 from torchvision.datasets import ImageFolder
 from torchvision.transforms import Compose, Resize, ToTensor, Normalize, RandomHorizontalFlip, RandomRotation, RandomResizedCrop
 from torchvision.utils import save_image, make_grid
+from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
+from torch.amp import GradScaler, autocast
 
 from ml.UNet import UNet
 from ml.Discriminator import Discriminator
@@ -114,7 +116,7 @@ def train():
     # criterion = BCELoss()
     # real_label = 1.
     # fake_label = 0.
-    criterion_GAN = BCELoss()
+    criterion_GAN = BCEWithLogitsLoss()
     criterion_pixel = L1Loss()
     
     real_label = 0.9 
@@ -129,6 +131,15 @@ def train():
     D_losses = []
     iters = 0
     best_val_loss = float('inf')
+
+    psnr = PeakSignalNoiseRatio(data_range=1.0).to(device)
+    ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(device)
+
+    scaler = GradScaler('cuda')
+
+    schedulerG = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizerG, mode='min', patience=5, factor=0.5
+    )
 
     print("\n\nStarting training")
 
@@ -145,41 +156,55 @@ def train():
             netD.zero_grad()
 
             ## real batch
-            label = torch.full((b_size,), real_label, dtype=torch.float, device=device)
-            output_real = netD(real).view(-1)
-            lossD_real = criterion_GAN(output_real, label)
-            lossD_real.backward()
-            D_x = output_real.mean().item()
+            with autocast('cuda'):
+                label = torch.full((b_size,), real_label, dtype=torch.float, device=device)
+                output_real = netD(real).view(-1)
+                lossD_real = criterion_GAN(output_real, label)
+            
+            scaler.scale(lossD_real).backward()
+            D_x = output_real.sigmoid().mean().item()
 
             ## fake batch
             masked = mask_batch_torch(real, device)
 
-            fake = netG(masked)
-            label.fill_(fake_label)
-            output_fake = netD(fake.detach()).view(-1)
-
-            lossD_fake = criterion_GAN(output_fake, label)
-            lossD_fake.backward()
-            D_G_z1 = output_fake.mean().item()
+            with autocast('cuda'):
+                fake = netG(masked)
+                label.fill_(fake_label)
+                output_fake = netD(fake.detach()).view(-1)
+                lossD_fake = criterion_GAN(output_fake, label)
+            
+            scaler.scale(lossD_fake).backward()
+            D_G_z1 = output_fake.sigmoid().mean().item()
             
             lossD = lossD_real + lossD_fake
-            optimizerD.step()
+            
+            scaler.step(optimizerD)
+            scaler.update()
 
 
             # Update generator
             netG.zero_grad()
-            label.fill_(real_label) # for generator loss labels are inverted
 
-            output = netD(fake).view(-1)
+            with autocast('cuda'):
+                label.fill_(real_label) # for generator loss labels are inverted
+                output = netD(fake).view(-1)
+                loss_adv = criterion_GAN(output, label)
+                loss_pixel = criterion_pixel(fake, real)
+                # lossG = criterion(output, label)
+                lossG = loss_adv + lambda_pixel * loss_pixel
+            
+            scaler.scale(lossG).backward()
 
-            loss_adv = criterion_GAN(output, label)
-            loss_pixel = criterion_pixel(fake, real)
-            # lossG = criterion(output, label)
-            lossG = loss_adv + lambda_pixel * loss_pixel
-            lossG.backward()
-            optimizerG.step()
+            # this is needed before calculating grad norms
+            scaler.unscale_(optimizerG)
 
-            D_G_z2 = output.mean().item()
+            # compute gradient norm
+            grad_norm_G = torch.nn.utils.clip_grad_norm_(netG.parameters(), max_norm=float('inf'))
+            
+            scaler.step(optimizerG)
+            scaler.update()
+
+            D_G_z2 = output.sigmoid().mean().item()
 
             # Stats
             if i % 50 == 0:
@@ -194,7 +219,9 @@ def train():
                     "train/loss_adv": loss_adv.item(),
                     "train/loss_pixel": loss_pixel.item(),
                     "train/D_x": D_x,
-                    "train/D_G_z": D_G_z1
+                    "train/D_G_z": D_G_z1,
+                    "train/grad_norm_G": grad_norm_G,
+                    "train/lr_G": optimizerG.param_groups[0]['lr']
                 })
 
             
@@ -202,19 +229,30 @@ def train():
             D_losses.append(lossD.item())
             iters += 1
 
+
         # validation
         netG.eval() 
         val_loss = 0.0
-        VAL_SEED = 555 
+        VAL_SEED = 555
+
+        avg_psnr = 0.0
+        avg_ssim = 0.0 
         
         with torch.no_grad():
             for batch_idx, (real_val, _) in enumerate(val_loader):
                 current_seed = VAL_SEED + batch_idx
                 real_val = real_val.to(device)
                 masked_val = mask_batch_torch(real_val, device, seed=current_seed)
-                fake_val = netG(masked_val)
 
-                val_loss += criterion_pixel(fake_val, real_val).item()
+                with autocast('cuda'):
+                    fake_val = netG(masked_val)
+                    val_loss += criterion_pixel(fake_val, real_val).item()
+
+                real_val_denorm = (real_val + 1) / 2.0
+                fake_val_denorm = (fake_val + 1) / 2.0
+
+                avg_psnr += psnr(fake_val_denorm, real_val_denorm).item()
+                avg_ssim += ssim(fake_val_denorm, real_val_denorm).item()
                 
                 if batch_idx == 0:
                     logging_real = real_val[:4]
@@ -222,6 +260,10 @@ def train():
                     logging_fake = fake_val[:4]
 
         avg_val_loss = val_loss / len(val_loader)
+        final_psnr = avg_psnr / len(val_loader)
+        final_ssim = avg_ssim / len(val_loader)
+
+        schedulerG.step(avg_val_loss)
 
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
@@ -229,7 +271,7 @@ def train():
             torch.save(netD.state_dict(), f'{MODEL_DIR}/checkpoints/best_discriminator_{run}.pth')
 
         # log to wandb
-        log_dict = {"val/l1_loss": avg_val_loss, "epoch": epoch}
+        log_dict = {"val/l1_loss": avg_val_loss, "val/psnr": final_psnr, "val/ssim": final_ssim, "epoch": epoch}
         # epoch stats
         tqdm.write(f'Epoch {epoch}/{EPOCHS}: Loss_D: {np.mean(D_losses[-len(train_loader):]):.4f}\tLoss_G: {np.mean(G_losses[-len(train_loader):]):.4f}| Val L1 Loss: {avg_val_loss:.4f}')
 
