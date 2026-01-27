@@ -9,7 +9,7 @@ class VGGLoss(torch.nn.Module):
         for param in self.vgg.parameters():
             param.requires_grad = False
 
-        self.criterion = torch.nn.L1Loss()
+        self.criterion = torch.nn.MSELoss()
         self.mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(device)
         self.std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(device)
 
