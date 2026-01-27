@@ -21,7 +21,7 @@ from utils.weights import weights_init_normal
 from utils.masking import mask_batch
 from utils.losses import VGGLoss
 
-def train():
+def train(resume_G=None, resume_D=None, start_epoch=0):
     try:
         run = datetime.now().strftime("%Y%m%d_%H%M%S")
         # Initial setup
@@ -104,15 +104,31 @@ def train():
         )
 
         # Initialize models
-        netG = UNet(device).to(device)
-        netG.apply(weights_init_normal)
-        print("\n\nGenerator architecture:")
-        netG.summary()
+        # netG = UNet(device).to(device)
+        # netG.apply(weights_init_normal)
+        # print("\n\nGenerator architecture:")
+        # netG.summary()
 
+        # netD = Discriminator(device, hidden_dim=config["model"]["hidden_channels"]).to(device)
+        # netD.apply(weights_init_normal)
+        # print("\n\nDiscriminator architecture:")
+        # netD.summary()
+        netG = UNet(device).to(device)
         netD = Discriminator(device, hidden_dim=config["model"]["hidden_channels"]).to(device)
-        netD.apply(weights_init_normal)
-        print("\n\nDiscriminator architecture:")
-        netD.summary()
+        if resume_G and resume_D:
+            print(f"\n=========================================")
+            print(f" RESUMING from Epoch {start_epoch}")
+            print(f" Loading G: {resume_G}")
+            print(f" Loading D: {resume_D}")
+            print(f"=========================================\n")
+            
+            # Load the weights you saved
+            netG.load_state_dict(torch.load(resume_G, map_location=device))
+            netD.load_state_dict(torch.load(resume_D, map_location=device))
+        else:
+            # Only init normal weights if NOT resuming
+            netG.apply(weights_init_normal)
+            netD.apply(weights_init_normal)
 
         # criterion = BCELoss()
         # real_label = 1.
@@ -146,7 +162,7 @@ def train():
 
         print("\n\nStarting training")
 
-        for epoch in trange(EPOCHS, desc="Epochs"):
+        for epoch in trange(start_epoch, EPOCHS, desc="Epochs"):
             netG.train()
             netD.train()
 
@@ -312,4 +328,8 @@ def train():
         wandb.finish()
 
 if __name__ == "__main__":
-    train()
+    train(
+        resume_G='models/checkpoints/generator_20260127_001602_iter55.pth',
+        resume_D='models/checkpoints/discriminator_20260127_001602_iter55.pth',
+        start_epoch=56
+    )
