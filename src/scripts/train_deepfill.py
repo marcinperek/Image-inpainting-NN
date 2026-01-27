@@ -5,16 +5,17 @@ import numpy as np
 import wandb
 
 import torch
-from torch.utils.data import DataLoader, Subset, random_split
-from torch.nn import BCELoss, L1Loss, BCEWithLogitsLoss, MSELoss
+from torch.utils.data import DataLoader, Subset
+from torch.nn import L1Loss, BCEWithLogitsLoss
 from torch.optim import Adam
 from torchvision.datasets import ImageFolder
 from torchvision.transforms import Compose, Resize, ToTensor, Normalize, RandomHorizontalFlip, RandomRotation, RandomResizedCrop
-from torchvision.utils import save_image, make_grid
+from torchvision.utils import make_grid
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
-from torch.amp import GradScaler, autocast
+from torch.amp.grad_scaler import GradScaler
+from torch.amp.autocast_mode import autocast
 
-from ml.UNet import UNet
+from ml.DeepFill import DeepFill
 from ml.Discriminator import Discriminator
 from utils.config import load_config
 from utils.weights import weights_init_normal
@@ -23,9 +24,15 @@ from utils.losses import VGGLoss
 
 def train():
     try:
+        print("\n")
+        print("="*50)
+        print("  Training UNet Model with Adversarial Loss")
+        print("="*50)
+        print()
+
         run = datetime.now().strftime("%Y%m%d_%H%M%S")
         # Initial setup
-        config = load_config("config.toml")
+        config = load_config("config_deepfill.toml")
         IMG_SIZE = config["files"]["image_size"]
         LR = config["train"]["learning_rate"]
         BETA1 = config["train"]["beta1"]
@@ -33,22 +40,28 @@ def train():
         EPOCHS = config["train"]["epochs"]
         MODEL_DIR = config["files"]["output_dir"]
 
-        wandb.init(
-            entity="marcin-and-adam",
-            project="image-inpainting",
-            name=f"run_{run}",
-            config=config
-        )
 
         seed = config["train"]["seed"]
-        print("Setup:")
-        print("  Random Seed: ", seed)
+        print("Config:")
+        for key, value in config.items():
+            print(f"  {key}: {value}")
         random.seed(seed)
         torch.manual_seed(seed)
         torch.use_deterministic_algorithms(True)
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print("  Using device:", device)
+        
+        print()
+        print("Using device:", device)
+        print("="*50)
+        print("\n")
+
+        wandb.init(
+            entity="marcin-and-adam",
+            project="image-inpainting",
+            name=f"run_deepfill_{run}",
+            config=config
+        )
 
         # data augmentation
         train_transforms = Compose([
@@ -66,7 +79,7 @@ def train():
             Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
         ])
 
-        # loading datasets sepately to apply different transforms
+        # loading datasets separately to apply different transforms
         train_dataset_full = ImageFolder(
             root=config["files"]["data_root"],
             transform=train_transforms
@@ -104,19 +117,20 @@ def train():
         )
 
         # Initialize models
-        netG = UNet(device).to(device)
-        netG.apply(weights_init_normal)
-        print("\n\nGenerator architecture:")
+        netG = DeepFill(device, cnum=32).to(device)
+
+        print("\n")
+        print("="*80)
+        print("Generator architecture:")
         netG.summary()
 
         netD = Discriminator(device, hidden_dim=config["model"]["hidden_channels"]).to(device)
         netD.apply(weights_init_normal)
-        print("\n\nDiscriminator architecture:")
+        print("\nDiscriminator architecture:")
         netD.summary()
+        print("="*80, "\n")
 
-        # criterion = BCELoss()
-        # real_label = 1.
-        # fake_label = 0.
+        # Loss functions and optimizers
         criterion_GAN = BCEWithLogitsLoss()
         criterion_pixel = L1Loss()
         criterion_vgg = VGGLoss(device)
@@ -125,7 +139,6 @@ def train():
         
         real_label = 0.9
         fake_label = 0.0
-
 
         optimizerD = Adam(netD.parameters(), lr=LR, betas=(BETA1, BETA2))
         optimizerG = Adam(netG.parameters(), lr=LR, betas=(BETA1, BETA2))
@@ -139,6 +152,9 @@ def train():
         ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(device)
 
         scaler = GradScaler('cuda')
+        logging_real = None
+        logging_masked = None
+        logging_fake = None
 
         schedulerG = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizerG, mode='min', patience=5, factor=0.5
@@ -171,7 +187,7 @@ def train():
                 masked = mask_batch(real, device)
 
                 with autocast('cuda'):
-                    fake = netG(masked)
+                    _, fake = netG(masked)
                     label.fill_(fake_label)
                     output_fake = netD(fake.detach()).view(-1)
                     lossD_fake = criterion_GAN(output_fake, label)
@@ -251,7 +267,7 @@ def train():
                     masked_val = mask_batch(real_val, device, seed=current_seed)
 
                     with autocast('cuda'):
-                        fake_val = netG(masked_val)
+                        _, fake_val = netG(masked_val)
                         val_pixel_loss += criterion_pixel(fake_val, real_val).item()
                         val_vgg_loss += criterion_vgg(fake_val, real_val).item()
 
@@ -287,6 +303,7 @@ def train():
 
             # save checkpoints and logging images
             if epoch % 5 == 0:
+                assert logging_real is not None and logging_masked is not None and logging_fake is not None
                 logging_images = torch.cat((logging_real, logging_masked, logging_fake), dim=2)
                 logging_images = (logging_images + 1) / 2.0  # denormalization
                 grid = make_grid(logging_images, nrow=4)
@@ -310,6 +327,7 @@ def train():
         raise e
     finally:
         wandb.finish()
+
 
 if __name__ == "__main__":
     train()
