@@ -1,0 +1,19 @@
+[train]
+batch_size = 8
+epochs = 5
+learning_rate = 0.0002
+beta1 = 0.5
+beta2 = 0.999
+seed = 42
+workers = 4
+lambda_pixel = 30.0
+lambda_vgg = 15.0
+
+[model]
+num_channels = 3
+hidden_channels = 32
+
+[files]
+image_size = 256
+data_root = "images/train/"
+output_dir = "models/"

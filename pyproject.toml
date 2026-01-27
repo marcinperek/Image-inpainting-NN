@@ -14,7 +14,8 @@ dependencies = [
 ]
 
 [project.scripts]
-train = "scripts.train:train"
+train-unet = "scripts.train_unet:train"
+train-deepfill = "scripts.train_deepfill:train"
 
 [build-system]
 requires = ["uv_build>=0.9.26,<0.10.0"]
