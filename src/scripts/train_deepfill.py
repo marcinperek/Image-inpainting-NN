@@ -16,7 +16,7 @@ from torch.amp.grad_scaler import GradScaler
 from torch.amp.autocast_mode import autocast
 
 from ml.DeepFill import DeepFill
-from ml.Discriminator import Discriminator
+from ml.PatchGAN import PatchGANDiscriminator
 from utils.config import load_config
 from utils.weights import weights_init_normal
 from utils.masking import mask_batch
@@ -124,7 +124,7 @@ def train():
         print("Generator architecture:")
         netG.summary()
 
-        netD = Discriminator(device, hidden_dim=config["model"]["hidden_channels"]).to(device)
+        netD = PatchGANDiscriminator(input_channels=3, ndf=config["model"]["hidden_channels"]).to(device)
         netD.apply(weights_init_normal)
         print("\nDiscriminator architecture:")
         netD.summary()
@@ -176,8 +176,8 @@ def train():
 
                 ## real batch
                 with autocast('cuda'):
-                    label = torch.full((b_size,), real_label, dtype=torch.float, device=device)
-                    output_real = netD(real).view(-1)
+                    output_real = netD(real)
+                    label = torch.full_like(output_real, real_label, dtype=torch.float, device=device)
                     lossD_real = criterion_GAN(output_real, label)
                 
                 scaler.scale(lossD_real).backward()
@@ -187,9 +187,9 @@ def train():
                 masked = mask_batch(real, device)
 
                 with autocast('cuda'):
-                    _, fake = netG(masked)
-                    label.fill_(fake_label)
-                    output_fake = netD(fake.detach()).view(-1)
+                    coarse, fake = netG(masked)
+                    output_fake = netD(fake.detach())
+                    label = torch.full_like(output_fake, fake_label, dtype=torch.float, device=device)
                     lossD_fake = criterion_GAN(output_fake, label)
                 
                 scaler.scale(lossD_fake).backward()
@@ -205,13 +205,17 @@ def train():
                 netG.zero_grad()
 
                 with autocast('cuda'):
-                    label.fill_(real_label) # for generator loss labels are inverted
-                    output = netD(fake).view(-1)
-                    loss_adv = criterion_GAN(output, label)
-                    loss_pixel = criterion_pixel(fake, real)
-                    loss_vgg = criterion_vgg(fake, real)
-                    # lossG = criterion(output, label)
-                    lossG = loss_adv + lambda_pixel * loss_pixel + lambda_vgg * loss_vgg
+                    output = netD(fake)
+                    label = torch.full_like(output, real_label, dtype=torch.float, device=device)
+                    loss_adv_refined = criterion_GAN(output, label)
+                    loss_pixel_refined = criterion_pixel(fake, real)
+                    loss_vgg_refined = criterion_vgg(fake, real)
+                    
+                    loss_pixel_coarse = criterion_pixel(coarse, real)
+
+                    lossG = loss_adv_refined + \
+                            lambda_pixel * (loss_pixel_refined + 0.5 * loss_pixel_coarse) + \
+                            lambda_vgg * loss_vgg_refined
                 
                 scaler.scale(lossG).backward()
 
@@ -230,15 +234,16 @@ def train():
                 if i % 50 == 0:
                     tqdm.write('[%d/%d][%d/%d]  Loss_D: %.4f\tLoss_G: %.4f\tLoss_adv: %.4f\tLoss_pixel: %.4f\tLoss_vgg: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f'
                         % (epoch, EPOCHS, i, len(train_loader),
-                            lossD.item(), lossG.item(), loss_adv.item(), loss_pixel.item(), loss_vgg.item(), D_x, D_G_z1, D_G_z2))
+                            lossD.item(), lossG.item(), loss_adv_refined.item(), loss_pixel_refined.item(), loss_vgg_refined.item(), D_x, D_G_z1, D_G_z2))
                     
                     # log to wandb
                     wandb.log({
                         "train/loss_D": lossD.item(),
                         "train/loss_G": lossG.item(),
-                        "train/loss_adv": loss_adv.item(),
-                        "train/loss_pixel": loss_pixel.item(),
-                        "train/loss_vgg": loss_vgg.item(),
+                        "train/loss_adv_refined": loss_adv_refined.item(),
+                        "train/loss_pixel_refined": loss_pixel_refined.item(),
+                        "train/loss_pixel_coarse": loss_pixel_coarse.item(),
+                        "train/loss_vgg_refined": loss_vgg_refined.item(),
                         "train/D_x": D_x,
                         "train/D_G_z": D_G_z1,
                         "train/grad_norm_G": grad_norm_G,
