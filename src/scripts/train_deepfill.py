@@ -136,6 +136,7 @@ def train():
         criterion_vgg = VGGLoss(device)
         lambda_pixel = config["train"]["lambda_pixel"]
         lambda_vgg = config["train"]["lambda_vgg"]
+        lambda_adv = config["train"]["lambda_adv"]
         
         real_label = 0.9
         fake_label = 0.0
@@ -213,7 +214,7 @@ def train():
                     
                     loss_pixel_coarse = criterion_pixel(coarse, real)
 
-                    lossG = loss_adv_refined + \
+                    lossG = lambda_adv * loss_adv_refined + \
                             lambda_pixel * (loss_pixel_refined + 0.5 * loss_pixel_coarse) + \
                             lambda_vgg * loss_vgg_refined
                 
