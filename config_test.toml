@@ -1,0 +1,14 @@
+[test]
+batch_size = 16
+seed = 42
+workers = 4
+
+[model]
+cnum=32
+# weights_path = "models/generator_deepfill_best.pth"
+weights_path = "models/generator_unet_best2.pth"
+
+
+[files]
+image_size = 256
+data_root = "images/test/"
